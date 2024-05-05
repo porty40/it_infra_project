@@ -1,0 +1,26 @@
+- name: Install nginx and prom-exporter
+  apt:
+    name:
+      - nginx
+      - prometheus-nginx-exporter
+
+- name: Copy default Nginx config file
+  template:
+    src: default.j2
+    dest: /etc/nginx/sites-enabled/default
+    mode: '0644'
+  notify:
+    - Restart Nginx
+    - Restart Nginx exporter
+
+- name: Start nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Start prom-exporter
+  service:
+    name: prometheus-nginx-exporter
+    state: started
+    enabled: yes

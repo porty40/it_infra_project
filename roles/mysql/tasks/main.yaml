@@ -1,0 +1,130 @@
+- name: Alter my.cnf file for mysql exporter
+  template:
+    src: .my.cnf.exporter.j2
+    dest: "/var/lib/prometheus/.my.cnf"
+  no_log: true
+  notify:
+    - Restart mysqld
+    - Restart mysqld-exporter
+
+- name: Alter my.cnf file for mysql backup
+  template:
+    src: .my.cnf.backup.j2
+    dest: "/home/backup/.my.cnf"
+    owner: backup
+    mode: '0600'
+  no_log: true
+  notify:
+    - Restart mysqld
+
+- name: Install MySQL server and pymysql
+  apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+
+- name: Override mysqld bind-address config
+  template:
+    src: override.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/override.cnf
+  notify: Restart mysqld
+
+- name: Ensure MySQL service is running
+  systemd:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Add MySQL database
+  community.mysql.mysql_db:
+    name: "{{ mysql_database }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  notify:
+    - Reset MySQL source
+    - Reset MySQL replica
+
+- name: MySQL user
+  community.mysql.mysql_user:
+    name: "{{ mysql_user }}"
+    password: "{{ mysql_password }}"
+    host: "%"
+    priv: "{{ mysql_database }}.*:ALL"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true
+
+- name: Create user for replication
+  community.mysql.mysql_user:
+    name: replication
+    password: "{{ mysql_replication_user_password }}"
+    host: "%"
+    priv: "*.*:SELECT,REPLICATION SLAVE"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true
+
+- name: Set dynamic read-only variable
+  community.mysql.mysql_variables:
+    variable: read_only
+    value: "{{ 'OFF' if inventory_hostname == mysql_host else 'ON' }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    mode: persist
+  notify:
+    - Reset MySQL source
+    - Reset MySQL replica
+
+- name: Install mysql exporter
+  apt:
+    name: prometheus-mysqld-exporter
+
+- name: Alter mysqld-exporter config
+  copy:
+    src: prometheus-mysqld-exporter
+    dest: /etc/default/prometheus-mysqld-exporter
+  no_log: true
+  notify: Restart mysqld-exporter
+
+- name: Create user for mysql exporter
+  community.mysql.mysql_user:
+    name: "{{ mysql_exporter_user }}"
+    password: "{{ mysql_exporter_password }}"
+    priv: '*.*:PROCESS,REPLICATION CLIENT,SELECT'
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true
+
+- name: Ensure mysql exporter is running
+  systemd:
+    name: prometheus-mysqld-exporter
+    state: started
+    enabled: yes
+
+- name: Add /home/backup/mysql directory for backup
+  file:
+    path: /home/backup/mysql
+    state: directory
+    owner: backup
+    mode: '0700'
+
+- name: Create user for backup
+  community.mysql.mysql_user:
+    name: backup
+    password: "{{ mysql_backup_user_password }}"
+    priv: "*.*:LOCK TABLES,SELECT"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true
+
+- name: Ensure /etc/cron.d/mysql-backup file is created
+  template:
+    src: mysql-backup.cron.j2
+    dest: /etc/cron.d/mysql-backup
+  no_log: true
+
+- name: Set CNAME record for mysql
+  community.general.nsupdate:
+    key_name: "nsupdate.key"
+    key_algorithm: "hmac-sha256"
+    key_secret: "{{ dns_update_key }}"
+    server: "{{ item }}"
+    zone: "{{ domain }}"
+    record: "mysql{{ inventory_hostname | replace('porty40', '') }}"
+    value: "{{ inventory_hostname }}"
+    type: "CNAME"
+  with_items: "{{ groups['dns_masters'] }}"

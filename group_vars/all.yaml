@@ -1,0 +1,79 @@
+#variables for mysqld
+mysql_host: porty40-1
+agama_port: 8001
+mysql_database: agama
+mysql_user: agama
+mysql_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+#variables for bind9
+forwarders:
+  - 8.8.8.8
+  - 1.1.1.1
+  - 0.0.0.0
+  - 9.9.9.9
+domain: ryoku.io
+allowed_ip:
+  - 172.16.10.0/24
+  - 127.0.0.0/8
+  - 172.17.0.0/16
+dns_transfer_key: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+dns_update_key: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+
+#variables for backup server
+backup_server_ip: 172.16.10.132
+backup_server_ssh_key: ssh-ed25519 
+
+#variables for prometheus
+prometheus_jobs:
+  - name: linux
+    target_port: 9100
+    target_group: all
+  - name: bind
+    target_port: 9119
+    target_group: dns_servers
+  - name: nginx
+    target_port: 9113
+    target_group: web_servers
+  - name: mysql
+    target_port: 9104
+    target_group: db_servers
+  - name: influx
+    target_port: 9424
+    target_group: logging_servers
+  - name: haproxy
+    target_port: 9101
+    target_group: haproxy
+  - name: keepalived
+    target_port: 9165
+    target_group: haproxy
+
+#variables for mysqld-exporter
+mysql_exporter_user: exporter
+mysql_exporter_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+#variables for mysql backup
+mysql_backup_host: "{{ groups['db_servers'] | reject('eq', mysql_host) | first | default(mysql_host) }}"
+mysql_backup_user_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+#variables for mysql replication
+node_id: "{{ (ansible_port / 100) | int }}"
+mysql_replication_user_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+#variables for grafana
+grafana_port: 3001
+grafana_user: porty40
+grafana_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+
+#variables for keepalived and haproxy
+vrrp_master_vm: porty40-1
+vrrp_pass: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+app_containers_per_vm: 3

@@ -1,0 +1,74 @@
+- name: Install bind9 and prom-exporter
+  apt:
+    name:
+      - bind9
+      - prometheus-bind-exporter
+
+- name: Install dnspython library
+  apt:
+    name: python3-dnspython
+
+- name: Copy bind conf.local file
+  template:
+    src: named.conf.local.j2
+    dest: /etc/bind/named.conf.local
+  no_log: true
+  notify: Restart bind
+
+- name: Copy bind conf.options file
+  template:
+    src: named.conf.options.j2
+    dest: /etc/bind/named.conf.options
+  no_log: true
+  notify: Restart bind
+
+- name: Copy master zone db
+  template:
+    src: db.ryoku.j2
+    dest: /var/cache/bind/db.{{ domain }}
+    force: no
+  notify: rndc reload
+  when: inventory_hostname in groups['dns_masters']
+
+- name: Copy reverse zone db
+  template:
+    src: db.rev.ryoku.j2
+    dest: /var/cache/bind/db.rev.{{ domain }}
+    force: no
+  notify: rndc reload
+  when: inventory_hostname in groups['dns_masters']
+
+- meta: flush_handlers
+
+- name: Start bind9 and prom-exporter
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - bind9
+    - prometheus-bind-exporter
+
+- name: Set A record for backup server
+  community.general.nsupdate:
+    key_name: "nsupdate.key"
+    key_algorithm: "hmac-sha256"
+    key_secret: "{{ dns_update_key }}"
+    server: "localhost"
+    zone: "{{ domain }}"
+    record: "backup"
+    value: "{{ backup_server_ip }}"
+  when: inventory_hostname in groups['dns_masters']
+
+- name: Set CNAME record for bind9
+  community.general.nsupdate:
+    key_name: "nsupdate.key"
+    key_algorithm: "hmac-sha256"
+    key_secret: "{{ dns_update_key }}"
+    server: "{{ inventory_hostname }}"
+    zone: "{{ domain }}"
+    record: "ns{{ item | replace('porty40', '') }}"
+    value: "{{ item }}"
+    type: "CNAME"
+  with_items: "{{ groups['dns_servers'] }}"
+  when: inventory_hostname in groups['dns_masters']

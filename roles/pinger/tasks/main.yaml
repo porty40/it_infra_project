@@ -1,0 +1,37 @@
+- name: Create pinger user
+  user:
+    name: pinger
+    state: present
+
+- name: Create /etc/pinger directory
+  file:
+    path: /etc/pinger
+    state: directory
+
+- name: Install fping for pinger script
+  apt:
+    name: fping
+
+- name: Copy pinger.sh script
+  copy:
+    src: pinger.sh
+    dest: /usr/local/bin/pinger.sh
+    mode: '0755'
+
+- name: Create systemd service unit
+  template:
+    src: pinger.service.j2
+    dest: /etc/systemd/system/pinger.service
+  notify: Reload systemd
+
+- name: Create pinger config
+  template:
+    src: pinger.conf.j2
+    dest: /etc/pinger/pinger.conf
+  notify: Restart pinger
+
+- name: Start and enable pinger service
+  service:
+    name: pinger
+    state: started
+    enabled: yes

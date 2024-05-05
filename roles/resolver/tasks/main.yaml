@@ -1,0 +1,4 @@
+- name: Alter DNS resolvers list
+  template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf

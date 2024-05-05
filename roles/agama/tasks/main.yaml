@@ -1,0 +1,64 @@
+- name: Create /opt/agama directory
+  file:
+    path: /opt/agama
+    state: directory
+
+- name: Install AGAMA dependencies
+  apt:
+    name:
+      - python3-flask-sqlalchemy
+      - python3-pymysql
+
+- name: Install AGAMA packs
+  get_url:
+    url: https://raw.githubusercontent.com/user/agama/master/{{ item }}
+    dest: /opt/agama/{{ item }}
+  loop:
+    - agama.py
+    - Dockerfile
+
+- name: Build Docker image
+  community.docker.docker_image:
+    name: agama
+    source: build
+    build:
+      path: /opt/agama
+
+- name: Get list of Docker containers
+  command: docker ps --format '{{ '{{' }}.Names{{ '}}' }}'
+  register: docker_container_info_result
+  changed_when: docker_container_info_result.stdout_lines | select('match', '^agama_.*') | list | length != app_containers_per_vm
+
+- name: Filter containers starting with agama_
+  set_fact:
+    agama_containers: "{{ docker_container_info_result.stdout_lines | select('match', '^agama_.*') | list }}"
+
+- name: Banish useless agama containers
+  community.docker.docker_container:
+    name: "agama_{{ item }}"
+    state: absent
+  when: app_containers_per_vm < agama_containers | length
+  loop: "{{ range(app_containers_per_vm + 1, agama_containers | length + 1) | list }}"
+
+- name: Agama container
+  community.docker.docker_container:
+    name: "agama_{{ item + 1 }}"
+    image: agama
+    published_ports: "{{ agama_port + item }}:8000"
+    env:
+      AGAMA_DATABASE_URI=mysql+pymysql://{{ mysql_user }}:{{ mysql_password }}@{{ mysql_host }}/{{ mysql_database }}
+    restart_policy: always
+  loop: "{{ range(app_containers_per_vm) }}"
+  no_log: true
+
+- name: Set CNAME record for web_app_vms
+  community.general.nsupdate:
+    key_name: "nsupdate.key"
+    key_algorithm: "hmac-sha256"
+    key_secret: "{{ dns_update_key }}"
+    server: "{{ item }}"
+    zone: "{{ domain }}"
+    record: "www{{ inventory_hostname | replace('porty40', '') }}"
+    value: "{{ inventory_hostname }}"
+    type: "CNAME"
+  with_items: "{{ groups['dns_masters'] }}"

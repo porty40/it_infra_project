@@ -1,0 +1,91 @@
+- name: Add InfluxData GPG key
+  apt_key:
+    url: https://repos.influxdata.com/influxdata-archive_compat.key
+    state: present
+
+- name: Add InfluxData APT repository
+  apt_repository:
+    repo: 'deb https://repos.influxdata.com/debian stable main'
+    state: present
+    update_cache: yes
+
+- name: Download InfluxDB 1.8.10 Debian package
+  get_url:
+    url: https://dl.influxdata.com/influxdb/releases/influxdb_1.8.10_amd64.deb
+    dest: /usr/local/bin/influxdb_1.8.10_amd64.deb
+
+- name: Install InfluxDB
+  apt:
+    deb: /usr/local/bin/influxdb_1.8.10_amd64.deb
+    update_cache: yes
+
+- name: Copy InfluxDB configurarion file
+  template:
+    src: influxdb.conf.j2
+    dest: /etc/influxdb/influxdb.conf
+  notify: Restart influxdb
+
+- name: Install Telegraf
+  apt:
+    name: telegraf
+
+- name: Create Telegraf configuration file
+  template:
+    src: telegraf.conf.j2
+    dest: /etc/telegraf/telegraf.conf
+  notify: Restart telegraf
+
+- name: Download InfluxDB Stats Exporter binary
+  get_url:
+    url: https://github.com/carlpett/influxdb_stats_exporter/releases/download/v0.1.1/influx_stats_exporter_linux_386
+    dest: /usr/local/bin/influxdb_stats_exporter
+    mode: '0755'
+  notify: Reload systemd
+
+- name: Copy InfluxDB Stats Exporter service unit
+  template:
+    src: prometheus-influxdb-stats-exporter.service.j2
+    dest: /etc/systemd/system/prometheus-influxdb-stats-exporter.service
+  notify: Reload systemd
+
+- name: Start InfluxDB service
+  service:
+    name: influxdb
+    state: started
+    enabled: yes
+
+- name: Start Telegraf service
+  service:
+    name: telegraf
+    state: started
+    enabled: yes
+
+- name: Start InfluxDB Stats Exporter service
+  systemd:
+    name: prometheus-influxdb-stats-exporter
+    state: started
+    enabled: yes
+
+- name: Add /home/backup/influxdb directory for backup
+  file:
+    path: /home/backup/influxdb
+    state: directory
+    owner: backup
+    mode: '0700'
+
+- name: Ensure /etc/cron.d/influxdb-backup file is created
+  template:
+    src: influxdb-backup.cron.j2
+    dest: /etc/cron.d/influxdb-backup
+
+- name: Set CNAME record for infuxdb
+  community.general.nsupdate:
+    key_name: "nsupdate.key"
+    key_algorithm: "hmac-sha256"
+    key_secret: "{{ dns_update_key }}"
+    server: "{{ item }}"
+    zone: "{{ domain }}"
+    record: "influxdb"
+    value: "{{ inventory_hostname }}"
+    type: "CNAME"
+  with_items: "{{ groups['dns_masters'] }}"

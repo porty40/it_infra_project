@@ -1,6 +1,6 @@
 # IT Infrastructure Project
 
-## Infrastructure as Code (IaC) / Network Installation, Management, Logging, and Monitoring
+## Infrastructure as Code (IaC) / Infrastructure Deployment, Management, Logging, and Monitoring
 
 ### Technologies:
 
